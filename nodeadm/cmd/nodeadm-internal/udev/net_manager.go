@@ -103,6 +103,17 @@ func (c *netManager) addAction(ctx context.Context, log *zap.Logger) error {
 	}
 	log.Info("resolved net manager", zap.String("name", manager))
 
+	// For any secondary interface, we must ensure that amazon-ec2-net-utils
+	// does not interfere. It has its own udev rules that trigger services
+	// which can race with us or overwrite our config. We mask them to be safe.
+	if c.selfMac != c.primaryMac {
+		log.Info("masking amazon-ec2-net-utils services for secondary interface")
+		if err := maskEC2NetUtilsServices(ctx, c.iface); err != nil {
+			// We log but don't fail, as the services might not exist or we might lack perms (though we should be root)
+			log.Warn("failed to mask ec2 net utils services", zap.Error(err))
+		}
+	}
+
 	if manager == ManagerSystemd {
 		if err := c.manageLink(ctx); err != nil {
 			return err
@@ -121,6 +132,9 @@ func (c *netManager) addAction(ctx context.Context, log *zap.Logger) error {
 			}
 		}
 	} else {
+		// If it's not managed by Systemd (e.g. CNI), we explicitly write an
+		// Unmanaged=yes config to ensure systemd-networkd leaves it alone.
+		// This is critical for secondary interfaces to stay DOWN until CNI takes over.
 		if err := c.unmanageLink(ctx); err != nil {
 			return err
 		}
@@ -141,10 +155,6 @@ func (c *netManager) manageLink(ctx context.Context) error {
 	}
 	networkCard, err := getNetworkCard(ctx, c.imds, c.selfMac)
 	if err != nil {
-		return err
-	}
-
-	if err := disableEC2NetUtilsServices(ctx, c.iface); err != nil {
 		return err
 	}
 
@@ -194,10 +204,6 @@ func (c *netManager) manageLink(ctx context.Context) error {
 }
 
 func (c *netManager) unmanageLink(ctx context.Context) error {
-	if err := disableEC2NetUtilsServices(ctx, c.iface); err != nil {
-		return err
-	}
-
 	templateVars := networkTemplateVars{
 		MAC: c.selfMac,
 	}
@@ -220,17 +226,16 @@ func getInterfaceMAC(iface string) (string, error) {
 	return strings.TrimSpace(string(macData)), nil
 }
 
-func disableEC2NetUtilsServices(ctx context.Context, iface string) error {
+func maskEC2NetUtilsServices(ctx context.Context, iface string) error {
 	services := []string{
 		fmt.Sprintf("policy-routes@%s.service", iface),
 		fmt.Sprintf("refresh-policy-routes@%s.timer", iface),
 		fmt.Sprintf("refresh-policy-routes@%s.service", iface),
 	}
 	for _, service := range services {
-		// We use "stop" and "disable" to ensure it doesn't run now or later
-		// We ignore errors because the service might not exist or be running
-		_ = exec.CommandContext(ctx, "systemctl", "stop", service).Run()
-		_ = exec.CommandContext(ctx, "systemctl", "disable", service).Run()
+		// We use "mask --now" to ensure it stops if running and cannot be started
+		// We ignore errors because the service might not exist
+		_ = exec.CommandContext(ctx, "systemctl", "mask", "--now", service).Run()
 	}
 	return nil
 }
