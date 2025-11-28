@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"fmt"
 	"os"
+	"os/exec"
 	"path"
 	"strings"
 
@@ -143,6 +144,10 @@ func (c *netManager) manageLink(ctx context.Context) error {
 		return err
 	}
 
+	if err := disableEC2NetUtilsServices(ctx, c.iface); err != nil {
+		return err
+	}
+
 	const (
 		// see: https://github.com/amazonlinux/amazon-ec2-net-utils/blob/3261b3b4c8824343706ee54d4a6f5d05cd8a5979/lib/lib.sh#L39
 		metricBase = 512
@@ -189,6 +194,10 @@ func (c *netManager) manageLink(ctx context.Context) error {
 }
 
 func (c *netManager) unmanageLink(ctx context.Context) error {
+	if err := disableEC2NetUtilsServices(ctx, c.iface); err != nil {
+		return err
+	}
+
 	templateVars := networkTemplateVars{
 		MAC: c.selfMac,
 	}
@@ -209,4 +218,19 @@ func getInterfaceMAC(iface string) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(string(macData)), nil
+}
+
+func disableEC2NetUtilsServices(ctx context.Context, iface string) error {
+	services := []string{
+		fmt.Sprintf("policy-routes@%s.service", iface),
+		fmt.Sprintf("refresh-policy-routes@%s.timer", iface),
+		fmt.Sprintf("refresh-policy-routes@%s.service", iface),
+	}
+	for _, service := range services {
+		// We use "stop" and "disable" to ensure it doesn't run now or later
+		// We ignore errors because the service might not exist or be running
+		_ = exec.CommandContext(ctx, "systemctl", "stop", service).Run()
+		_ = exec.CommandContext(ctx, "systemctl", "disable", service).Run()
+	}
+	return nil
 }
