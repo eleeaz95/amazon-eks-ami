@@ -119,6 +119,10 @@ func (c *netManager) addAction(ctx context.Context, log *zap.Logger) error {
 				return err
 			}
 		}
+	} else {
+		if err := c.unmanageLink(ctx); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -179,6 +183,19 @@ func (c *netManager) manageLink(ctx context.Context) error {
 	networkConfig, err := renderNetworkTemplate(templateVars)
 	if err != nil {
 		return fmt.Errorf("failed to render network template: %w", err)
+	}
+
+	return util.WriteFileWithDir(eksNetworkPath(c.iface), networkConfig, 0644)
+}
+
+func (c *netManager) unmanageLink(ctx context.Context) error {
+	templateVars := networkTemplateVars{
+		MAC: c.selfMac,
+	}
+
+	networkConfig, err := renderUnmanagedNetworkTemplate(templateVars)
+	if err != nil {
+		return fmt.Errorf("failed to render unmanaged network template: %w", err)
 	}
 
 	return util.WriteFileWithDir(eksNetworkPath(c.iface), networkConfig, 0644)

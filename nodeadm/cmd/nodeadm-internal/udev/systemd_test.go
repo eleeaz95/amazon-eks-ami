@@ -193,3 +193,17 @@ UseGateway=true
 	`), strings.TrimSpace(string(networkConfig)))
 	})
 }
+
+func Test_renderUnmanagedNetworkTemplate(t *testing.T) {
+	networkConfig, err := renderUnmanagedNetworkTemplate(networkTemplateVars{
+		MAC: "foo",
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, strings.TrimSpace(`
+[Match]
+PermanentMACAddress=foo
+
+[Link]
+Unmanaged=yes
+	`), strings.TrimSpace(string(networkConfig)))
+}

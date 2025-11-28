@@ -14,6 +14,14 @@ var (
 	//go:embed eks-managed.network.tpl
 	managedNetworkTemplateData string
 	managedNetworkTemplate     = template.Must(template.New("eks-managed").Parse(managedNetworkTemplateData))
+
+	unmanagedNetworkTemplateData = `[Match]
+PermanentMACAddress={{.MAC}}
+
+[Link]
+Unmanaged=yes
+`
+	unmanagedNetworkTemplate = template.Must(template.New("eks-unmanaged").Parse(unmanagedNetworkTemplateData))
 )
 
 type networkTemplateVars struct {
@@ -26,6 +34,14 @@ type networkTemplateVars struct {
 func renderNetworkTemplate(templateVars networkTemplateVars) ([]byte, error) {
 	var buf bytes.Buffer
 	if err := managedNetworkTemplate.Execute(&buf, templateVars); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func renderUnmanagedNetworkTemplate(templateVars networkTemplateVars) ([]byte, error) {
+	var buf bytes.Buffer
+	if err := unmanagedNetworkTemplate.Execute(&buf, templateVars); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
