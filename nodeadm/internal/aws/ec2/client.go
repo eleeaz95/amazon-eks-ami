@@ -8,6 +8,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/awslabs/amazon-eks-ami/nodeadm/internal/aws/imds"
 )
 
 type Client interface {
@@ -19,7 +20,13 @@ type client struct {
 }
 
 func NewClient(ctx context.Context) (Client, error) {
-	cfg, err := config.LoadDefaultConfig(ctx)
+	imdsClient := imds.DefaultClient()
+	identity, err := imdsClient.GetInstanceIdentityDocument(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get instance identity document: %w", err)
+	}
+
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(identity.Region))
 	if err != nil {
 		return nil, fmt.Errorf("failed to load aws config: %w", err)
 	}
